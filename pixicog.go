@@ -1,6 +1,8 @@
 package main
 
 import (
+  "encoding/base64"
+	"crypto/rand"
   "strings"
   "log"
   "bytes"
@@ -15,36 +17,51 @@ import (
   "io/ioutil"
 )
 
-func main() {
-  fmt.Println(os.Args[1])
-  msg, err := run(os.Args[1], os.Args[2], os.Args[3])
-  fmt.Printf("%s", msg)
-  if err != nil {
-    fmt.Println("err", err)
-    panic(1)
-  }
+type localError struct {
+  msg string
+  cause string
 }
 
-func run(fn, input, output string) ([]byte, error) {
-  mainFile, err := buildMainFile(fn)
-  if err != nil {
-    return nil, err
+func (l *localError) Error() string {
+  return fmt.Sprintf("Message: %s\nCause: %s", l.msg, l.cause)
+}
+
+func main() {
+  if len(os.Args) < 2 {
+    fmt.Println("You must provide an file for pixicog to run.");
+    os.Exit(1)
   }
 
-  tmpName, err := saveTemp([]byte(mainFile))
+  args := os.Args[2:]
+
+  msg, err := run(os.Args[1], args)
+  if err != nil {
+    fmt.Println(err.Error())
+    os.Exit(1)
+  }
+  fmt.Printf("%s", msg)
+}
+
+func run(fn string, args []string) ([]byte, error) {
+  mainFile, err := buildMainFile(fn)
+  if err != nil {
+    return nil, &localError{"Building Application", err.Error()}
+  }
+
+  tmpName, err := saveTemp([]byte(mainFile), fn)
   if err != nil {
     os.Remove(tmpName)
-    return nil, err
+    return nil, &localError{"Saving Temp", err.Error()}
   }
   log.Println(tmpName)
 
-  msg, err := gorun(tmpName, input, output)
-  //os.Remove(tmpName)
+  msg, err := gorun(tmpName, args)
+  os.Remove(tmpName)
   if err != nil {
     return nil, err
   }
 
-  return msg, err
+  return msg, nil
 }
 
 func buildMainFile(fn string) (string, error) {
@@ -132,26 +149,70 @@ func getFuncHash(fun *ast.FuncDecl, fset *token.FileSet) string {
   return fmt.Sprintf("%x", h.Sum(nil))
 }
 
-func saveTemp(content []byte) (string, error) {
-  tmpFile, err := ioutil.TempFile("", "pixicog-script*.go")
+func randomId() (string, error) {
+  b := make([]byte, 10)
+	_, err := rand.Read(b)
+	if err != nil {
+		return "", nil
+	}
+  return base64.StdEncoding.WithPadding(-1).EncodeToString(b), nil
+}
+
+func saveTemp(content []byte, fn string) (string, error) {
+  id, err := randomId()
   if err != nil {
     return "", err
   }
 
-  if _, err := tmpFile.Write(content); err != nil {
+  fnLen := len(fn)
+  prefix := fn[:fnLen-3]
+
+  tmpFileName := fmt.Sprintf("%s.%s.go", prefix, id);
+
+  err = ioutil.WriteFile(tmpFileName, content, 0644)
+  if err != nil {
     return "", err
   }
 
-  if err := tmpFile.Close(); err != nil {
-    return "", err
-  }
-
-  return tmpFile.Name(), nil
+  return tmpFileName, nil
 }
 
 
-func gorun(fn, input, output string) ([]byte, error) {
-  cmd := exec.Command("go", "run", fn, input, output)
-  msg, err := cmd.CombinedOutput()
-  return msg, err
+func gorun(fn string, args []string) ([]byte, error) {
+  ps := string(os.PathSeparator);
+  parts := strings.Split(fn, ps)
+  pn := len(parts)
+  dir := strings.Join(parts[:pn-1], ps)
+  args = append([]string{"run", parts[pn-1]}, args...);
+
+  cmd := exec.Command("go", args...)
+  cwd, err := os.Getwd()
+  if err != nil {
+    return nil, &localError{"Could not get CWD", err.Error()}
+  }
+
+  cmd.Dir = fmt.Sprintf("%s%s%s", cwd, ps, dir)
+  fmt.Println(args, cmd.Dir)
+  stderr, err := cmd.StderrPipe()
+  stdout, err := cmd.StdoutPipe()
+
+  if err := cmd.Start(); err != nil {
+    return nil, &localError{"Failed to start application", err.Error()}
+	}
+
+  errStr, err := ioutil.ReadAll(stderr)
+  if err != nil {
+    return nil, &localError{"Failed to read stderr from application", err.Error()}
+  }
+
+  outStr, err := ioutil.ReadAll(stdout)
+  if err != nil {
+    return nil, &localError{"Failed to read stdout application", err.Error()}
+  }
+
+  if err := cmd.Wait(); err != nil {
+    cause := fmt.Sprintf("Application exited: %d", cmd.ProcessState.ExitCode())
+    return nil, &localError{cause, string(errStr)}
+	}
+  return outStr, nil
 }

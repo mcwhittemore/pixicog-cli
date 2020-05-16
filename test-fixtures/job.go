@@ -1,17 +1,20 @@
 package main
 
 import (
+  "github.com/mcwhittemore/pixicog"
   "fmt"
-  "github.com/mcwhittemore/pixicog-go"
 )
 
 func ProcessLoadData(src, state pixicog.ImageList) (pixicog.ImageList, pixicog.ImageList) {
-  fmt.Println("Hello")
+  printer("Hello")
   return src, state
 }
 
 func ProcessMergeData(src, state pixicog.ImageList) (pixicog.ImageList, pixicog.ImageList) {
-  fmt.Println("World")
+  printer("World")
   return src, state
 }
 
+func printer(str string) {
+  fmt.Println(str)
+}
