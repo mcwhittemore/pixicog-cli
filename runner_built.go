@@ -1,19 +1,6 @@
-package src
-
-import (
-	"crypto/sha1"
-	"encoding/base64"
-	"fmt"
-	"github.com/mcwhittemore/pixicog"
-	"image"
-	"image/color"
-	"io/ioutil"
-	"os"
-	"strconv"
-	"strings"
-)
-
-type Runner struct {
+package main
+var runnerImports = []string{"crypto/sha1","encoding/base64","fmt","github.com/mcwhittemore/pixicog","image","image/color","io/ioutil","os","strconv","strings"}
+var runnerBody = `type Runner struct {
 	state       map[string]pixicog.ImageList
 	args        []string
 	hash        string
@@ -205,4 +192,4 @@ func fileExists(filename string) bool {
 		return false
 	}
 	return !info.IsDir()
-}
+}`
